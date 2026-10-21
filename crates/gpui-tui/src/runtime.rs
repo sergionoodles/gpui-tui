@@ -7,15 +7,16 @@ use std::time::{Duration, Instant};
 
 use calloop::timer::{TimeoutAction, Timer};
 use calloop::{LoopHandle, LoopSignal};
-use gpui::{CursorStyle, Pixels, Point, Size, WindowAppearance, point, px, size};
+use gpui::{CursorStyle, DevicePixels, Pixels, Point, Size, WindowAppearance, point, px, size};
 use gpui_tui_term::input::{ColorScheme, MouseEvent, Parser, Reply, TermEvent};
-use gpui_tui_term::{Frame, Geometry, Presenter, Session, sequences};
+use gpui_tui_term::{Frame, Geometry, Presenter, Session, Transport, sequences};
 
 use crate::cursor::pointer_shape_name;
 use crate::options::Options;
 use crate::window::WindowShared;
 
 pub(crate) use file_picker::{PickerReply, open_picker, save_picker};
+use stats::{FrameSample, FrameStats};
 
 /// How long to wait for the rest of an escape sequence before treating ESC as a key press.
 const LONE_ESCAPE_TIMEOUT: Duration = Duration::from_millis(20);
@@ -33,6 +34,9 @@ pub(crate) struct Runtime {
     appearance: Cell<WindowAppearance>,
     cursor_style: Cell<Option<CursorStyle>>,
     options: Options,
+    transport: Transport,
+    /// Present when statistics were asked for.
+    stats: Option<RefCell<FrameStats>>,
     frame_interval: Duration,
     last_frame_at: Cell<Option<Instant>>,
     frame_timer_armed: Cell<bool>,
@@ -50,12 +54,14 @@ impl Runtime {
         loop_signal: LoopSignal,
         frame_ping: calloop::ping::Ping,
     ) -> Rc<Self> {
-        let presenter = Presenter::new(session.transport());
+        let transport = session.transport();
+        let presenter = Presenter::new(transport);
         let appearance = match session.capabilities().color_scheme() {
             Some(ColorScheme::Light) => WindowAppearance::Light,
             Some(ColorScheme::Dark) | None => WindowAppearance::Dark,
         };
-        let frame_interval = Duration::from_secs(1) / options.max_frames_per_second.max(1);
+        let frame_interval = Duration::from_secs(1) / options.frame_rate_for(transport);
+        let stats = options.stats.then(|| RefCell::new(FrameStats::default()));
 
         Rc::new_cyclic(|this| Self {
             session: RefCell::new(session),
@@ -66,6 +72,8 @@ impl Runtime {
             appearance: Cell::new(appearance),
             cursor_style: Cell::new(None),
             options,
+            transport,
+            stats,
             frame_interval,
             last_frame_at: Cell::new(None),
             frame_timer_armed: Cell::new(false),
@@ -88,7 +96,8 @@ impl Runtime {
         self.session.borrow().geometry()
     }
 
-    pub(crate) fn scale_factor(&self) -> f32 {
+    /// Terminal pixels per GPUI pixel.
+    fn display_scale(&self) -> f32 {
         let geometry = self.geometry();
         self.options
             .scale_factor
@@ -99,13 +108,38 @@ impl Runtime {
             })
     }
 
+    /// Frame pixels per terminal pixel; the terminal scales frames up to fill the grid.
+    fn render_scale(&self) -> f32 {
+        self.options
+            .render_scale_for(self.transport, self.display_scale())
+    }
+
+    /// The scale factor GPUI renders with: frame pixels per GPUI pixel.
+    pub(crate) fn scale_factor(&self) -> f32 {
+        self.display_scale() * self.render_scale()
+    }
+
     /// The window size in GPUI logical pixels.
     pub(crate) fn content_size(&self) -> Size<Pixels> {
         let geometry = self.geometry();
-        let scale = self.scale_factor();
+        let scale = self.display_scale();
         size(
             px(geometry.pixel_width() as f32 / scale),
             px(geometry.pixel_height() as f32 / scale),
+        )
+    }
+
+    /// The size of rendered frames: the content size at GPUI's scale factor.
+    pub(crate) fn frame_size(&self) -> Size<DevicePixels> {
+        let geometry = self.geometry();
+        let render_scale = self.render_scale();
+        let scaled = |pixels: u32| {
+            let scaled = (pixels as f32 * render_scale).round().max(1.0);
+            DevicePixels(scaled.min(i32::MAX as f32) as i32)
+        };
+        size(
+            scaled(geometry.pixel_width()),
+            scaled(geometry.pixel_height()),
         )
     }
 
@@ -125,7 +159,7 @@ impl Runtime {
         } else {
             geometry.cell_center(event.column, event.row)
         };
-        let scale = self.scale_factor();
+        let scale = self.display_scale();
         point(px(x / scale), px(y / scale))
     }
 
@@ -174,21 +208,40 @@ impl Runtime {
         self.send(out);
     }
 
-    /// Sends a rendered frame of the top window.
-    pub(crate) fn present(&self, frame: Frame<'_>) {
+    /// Sends a rendered frame of the top window. `render_time` is how long rendering took.
+    pub(crate) fn present(&self, frame: Frame<'_>, render_time: Duration) {
         if self.is_showing_file_picker() {
             return;
         }
         let area = self.geometry().cell_area();
+        let encode_start = Instant::now();
         let encoded = self
             .presenter
             .borrow_mut()
-            .encode(frame, area, Instant::now());
-        match encoded {
-            Ok(Some(bytes)) => self.send(bytes),
-            Ok(None) => {}
-            Err(error) => log::error!("failed to encode frame: {error}"),
+            .encode(frame, area, encode_start);
+        let encoded = match encoded {
+            Ok(Some(encoded)) => encoded,
+            Ok(None) => return,
+            Err(error) => {
+                log::error!("failed to encode frame: {error}");
+                return;
+            }
+        };
+        if let Some(stats) = &self.stats {
+            let now = Instant::now();
+            let sample = FrameSample {
+                render: render_time,
+                encode: now.duration_since(encode_start),
+                bytes: encoded.bytes.len(),
+                images_sent: encoded.images_sent,
+                images_total: encoded.images_total,
+            };
+            // Stderr goes to the log file, or is printed after exit.
+            if let Some(report) = stats.borrow_mut().record(sample, now) {
+                eprintln!("{report}");
+            }
         }
+        self.send(encoded.bytes);
     }
 
     // Frames
@@ -368,4 +421,5 @@ impl Runtime {
 }
 
 mod file_picker;
+mod stats;
 mod windows;

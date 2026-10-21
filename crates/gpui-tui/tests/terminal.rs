@@ -133,7 +133,9 @@ fn app_command(name: &str) -> Result<Command> {
         .env(CHILD_ENV, "1")
         .env("GPUI_TUI_LOG", &log_path)
         .env_remove("GPUI_TUI_SCALE")
-        .env_remove("GPUI_TUI_TRANSPORT");
+        .env_remove("GPUI_TUI_TRANSPORT")
+        .env_remove("GPUI_TUI_RENDER_SCALE")
+        .env_remove("GPUI_TUI_MAX_FPS");
     Ok(command)
 }
 
@@ -215,9 +217,23 @@ fn interaction_over_direct_transmission() -> Result<()> {
     run_interaction(config, "direct")
 }
 
+/// Inline frames on a high-density terminal are rendered at half resolution and scaled up by
+/// the terminal; clicks must still land where they appear.
+fn interaction_over_direct_transmission_at_half_resolution() -> Result<()> {
+    let config = TerminalConfig {
+        shared_memory: false,
+        cell_width: 16,
+        cell_height: 32,
+        ..TerminalConfig::default()
+    };
+    run_interaction(config, "direct-half-resolution")
+}
+
 fn run_interaction(config: TerminalConfig, name: &str) -> Result<()> {
-    let width = u32::from(config.columns) * u32::from(config.cell_width);
-    let height = u32::from(config.rows) * u32::from(config.cell_height);
+    let (columns, rows) = (u32::from(config.columns), u32::from(config.rows));
+    let (cell_width, cell_height) = (u32::from(config.cell_width), u32::from(config.cell_height));
+    let width = columns * cell_width;
+    let height = rows * cell_height;
     let (left_x, right_x, middle_y) = (width / 4, width * 3 / 4, height / 2);
     let mut terminal = spawn_app(config, name)?;
 
@@ -233,7 +249,7 @@ fn run_interaction(config: TerminalConfig, name: &str) -> Result<()> {
         screen.image.height()
     );
     ensure!(
-        (screen.columns, screen.rows) == (80, 24),
+        (screen.columns, screen.rows) == (columns, rows),
         "frame placed over the wrong cells"
     );
 
@@ -263,11 +279,14 @@ fn run_interaction(config: TerminalConfig, name: &str) -> Result<()> {
         pixel_matches(terminal.screen(), right_x, middle_y, RIGHT_TYPED)
     })?;
 
-    terminal.resize(100, 30)?;
+    let (resized_columns, resized_rows) = (100, 30);
+    terminal.resize(resized_columns, resized_rows)?;
+    let resized_width = u32::from(resized_columns) * cell_width;
+    let resized_height = u32::from(resized_rows) * cell_height;
     terminal.wait_until(TIMEOUT, "a frame at the new size", |terminal| {
-        terminal
-            .screen()
-            .is_some_and(|screen| screen.image.width() == 1000 && screen.image.height() == 600)
+        terminal.screen().is_some_and(|screen| {
+            screen.image.width() == resized_width && screen.image.height() == resized_height
+        })
     })?;
 
     terminal.press_control('c')?;
@@ -341,7 +360,7 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    let tests: [(&str, TestFn); 4] = [
+    let tests: [(&str, TestFn); 5] = [
         (
             "interaction_over_shared_memory",
             interaction_over_shared_memory,
@@ -349,6 +368,10 @@ fn main() -> ExitCode {
         (
             "interaction_over_direct_transmission",
             interaction_over_direct_transmission,
+        ),
+        (
+            "interaction_over_direct_transmission_at_half_resolution",
+            interaction_over_direct_transmission_at_half_resolution,
         ),
         ("file_picker_answers_the_app", file_picker_answers_the_app),
         (

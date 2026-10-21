@@ -5,10 +5,11 @@ use std::rc::{Rc, Weak};
 use std::sync::Arc;
 use std::time::Instant;
 
+use anyhow::Context as _;
 use gpui::{
-    AnyWindowHandle, DevicePixels, DispatchEventResult, FrameRequestSource, Modifiers, Pixels,
-    PlatformAtlas, PlatformHeadlessRenderer, PlatformInput, PlatformInputHandler,
-    RequestFrameOptions, Scene, Size, WindowVisibility,
+    AnyWindowHandle, DispatchEventResult, FrameRequestSource, Modifiers, Pixels, PlatformAtlas,
+    PlatformHeadlessRenderer, PlatformInput, PlatformInputHandler, RequestFrameOptions, Scene,
+    Size, WindowVisibility,
 };
 use gpui_tui_term::Frame;
 use gpui_tui_term::input::TermEvent;
@@ -41,7 +42,10 @@ impl TuiWindow {
         runtime: &Rc<Runtime>,
         title: Option<&str>,
     ) -> anyhow::Result<Self> {
-        let renderer = WgpuHeadlessRenderer::new()?;
+        let renderer = WgpuHeadlessRenderer::new().context(
+            "no GPU or software renderer found; without a GPU (e.g. on a server), \
+             install Mesa so frames can be rendered on the CPU with llvmpipe",
+        )?;
         let sprite_atlas = renderer.sprite_atlas();
         let shared = Rc::new(WindowShared {
             handle,
@@ -266,21 +270,20 @@ impl WindowShared {
         if !runtime.is_active_window(self) {
             return;
         }
-        let geometry = runtime.geometry();
-        let device_size = Size {
-            width: DevicePixels(i32::try_from(geometry.pixel_width()).unwrap_or(i32::MAX)),
-            height: DevicePixels(i32::try_from(geometry.pixel_height()).unwrap_or(i32::MAX)),
-        };
+        let render_start = Instant::now();
         let image = self
             .renderer
             .borrow_mut()
-            .render_scene_to_image(scene, device_size);
+            .render_scene_to_image(scene, runtime.frame_size());
         match image {
-            Ok(image) => runtime.present(Frame {
-                pixels: image.as_raw(),
-                width: image.width(),
-                height: image.height(),
-            }),
+            Ok(image) => runtime.present(
+                Frame {
+                    pixels: image.as_raw(),
+                    width: image.width(),
+                    height: image.height(),
+                },
+                render_start.elapsed(),
+            ),
             Err(error) => log::error!("failed to render frame: {error:#}"),
         }
     }

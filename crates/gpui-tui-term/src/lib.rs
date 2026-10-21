@@ -12,11 +12,12 @@ mod restore;
 pub mod sequences;
 pub mod session;
 mod shared_memory;
+mod tiles;
 mod tty;
 mod writer;
 
 pub use capabilities::Capabilities;
 pub use geometry::Geometry;
-pub use presenter::{Frame, Presenter, Transport};
+pub use presenter::{EncodedFrame, Frame, Presenter, Transport};
 pub use restore::restore_terminal;
 pub use session::{Session, SessionOptions};

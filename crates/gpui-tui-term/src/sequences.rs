@@ -93,6 +93,13 @@ pub fn autowrap(out: &mut Vec<u8>, enabled: bool) {
     set_mode(out, MODE_AUTOWRAP, enabled);
 }
 
+/// CUP: moves the cursor to a zero-based cell.
+pub fn move_cursor(out: &mut Vec<u8>, row: u16, column: u16) {
+    let row = u32::from(row) + 1;
+    let column = u32::from(column) + 1;
+    out.extend_from_slice(format!("\x1b[{row};{column}H").as_bytes());
+}
+
 /// OSC 2: window title.
 pub fn title(out: &mut Vec<u8>, title: &str) {
     out.extend_from_slice(b"\x1b]2;");
@@ -136,6 +143,13 @@ mod tests {
         assert!(exit.contains("\x1b[<u"));
         assert!(exit.contains("\x1b[?7h"));
         assert!(!enter.contains("\x1b[?2031h"));
+    }
+
+    #[test]
+    fn cursor_positions_are_one_based() {
+        let mut out = Vec::new();
+        move_cursor(&mut out, 0, 12);
+        assert_eq!(out, b"\x1b[1;13H");
     }
 
     #[test]

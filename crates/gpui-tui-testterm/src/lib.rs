@@ -6,6 +6,7 @@
 mod kitty;
 mod output;
 mod pty;
+mod screen;
 
 use std::collections::HashSet;
 use std::io::{Read as _, Write as _};
@@ -13,19 +14,25 @@ use std::process::{Command, ExitStatus};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, Result, bail};
-use image::RgbaImage;
 use rustix::event::{PollFd, PollFlags, Timespec};
 use rustix::termios::Winsize;
 
 use crate::kitty::Assembler;
 use crate::output::{OutputParser, Sequence};
 use crate::pty::Pty;
+use crate::screen::Placement;
+pub use crate::screen::Screen;
 
 const MODE_SGR_PIXELS: u16 = 1016;
 const MODE_IN_BAND_RESIZE: u16 = 2048;
 const MODE_ALTERNATE_SCREEN: u16 = 1049;
+const MODE_SYNCHRONIZED_OUTPUT: u16 = 2026;
 /// Modes this terminal claims to support when asked with DECRQM.
-const SUPPORTED_MODES: [u16; 3] = [MODE_SGR_PIXELS, 2026, MODE_IN_BAND_RESIZE];
+const SUPPORTED_MODES: [u16; 3] = [
+    MODE_SGR_PIXELS,
+    MODE_SYNCHRONIZED_OUTPUT,
+    MODE_IN_BAND_RESIZE,
+];
 const READ_CHUNK: usize = 64 * 1024;
 
 #[derive(Clone, Debug)]
@@ -56,25 +63,16 @@ impl Default for TerminalConfig {
     }
 }
 
-/// The latest frame, as the terminal would display it.
-pub struct Screen {
-    pub image: RgbaImage,
-    pub columns: u32,
-    pub rows: u32,
-}
-
-impl Screen {
-    pub fn pixel(&self, x: u32, y: u32) -> [u8; 4] {
-        self.image.get_pixel(x, y).0
-    }
-}
-
 pub struct FakeTerminal {
     pty: Pty,
     config: TerminalConfig,
     parser: OutputParser,
     assembler: Assembler,
     screen: Option<Screen>,
+    /// Zero-based cursor cell as `(column, row)`; images are placed here.
+    cursor: (u32, u32),
+    /// An image arrived since the last synchronized update ended.
+    is_frame_pending: bool,
     frame_count: usize,
     enabled_modes: HashSet<u16>,
     restored: bool,
@@ -93,6 +91,8 @@ impl FakeTerminal {
             parser: OutputParser::new(),
             assembler: Assembler::default(),
             screen: None,
+            cursor: (0, 0),
+            is_frame_pending: false,
             frame_count: 0,
             enabled_modes: HashSet::new(),
             restored: false,
@@ -308,6 +308,10 @@ impl FakeTerminal {
                 self.text.clear();
                 Ok(())
             }
+            (position, b'H') => {
+                self.cursor = cursor_position(position);
+                Ok(())
+            }
             (query, b'p') if query.starts_with('?') && query.ends_with('$') => {
                 let mode: u16 = query
                     .trim_start_matches('?')
@@ -331,6 +335,7 @@ impl FakeTerminal {
                     } else {
                         self.enabled_modes.remove(&mode);
                         self.restored |= mode == MODE_ALTERNATE_SCREEN;
+                        self.end_synchronized_update(mode);
                     }
                 }
                 Ok(())
@@ -363,14 +368,7 @@ impl FakeTerminal {
             }
             "T" | "t" => {
                 match kitty::decode_image(&command) {
-                    Ok(decoded) => {
-                        self.screen = Some(Screen {
-                            image: decoded.image,
-                            columns: decoded.columns,
-                            rows: decoded.rows,
-                        });
-                        self.frame_count += 1;
-                    }
+                    Ok(decoded) => self.place(&decoded),
                     Err(error) => self.errors.push(format!("{error:#}")),
                 }
                 Ok(())
@@ -380,6 +378,27 @@ impl FakeTerminal {
                 Ok(())
             }
             _ => Ok(()),
+        }
+    }
+}
+
+impl FakeTerminal {
+    fn place(&mut self, decoded: &kitty::DecodedImage) {
+        let (column, row) = self.cursor;
+        let placement = Placement {
+            column,
+            row,
+            cell_width: u32::from(self.config.cell_width),
+            cell_height: u32::from(self.config.cell_height),
+        };
+        self.screen = Some(screen::composite(self.screen.take(), decoded, placement));
+        self.is_frame_pending = true;
+    }
+
+    /// A frame is complete when the synchronized update around its images ends.
+    fn end_synchronized_update(&mut self, mode: u16) {
+        if mode == MODE_SYNCHRONIZED_OUTPUT && std::mem::take(&mut self.is_frame_pending) {
+            self.frame_count += 1;
         }
     }
 }
@@ -399,6 +418,16 @@ impl Drop for FakeTerminal {
             eprintln!("failed to stop the app under test: {error}");
         }
     }
+}
+
+/// Parses the parameters of `CSI row ; column H` into a zero-based `(column, row)`.
+fn cursor_position(parameters: &str) -> (u32, u32) {
+    let mut numbers = parameters
+        .split(';')
+        .map(|number| number.parse::<u32>().unwrap_or(1).max(1) - 1);
+    let row = numbers.next().unwrap_or(0);
+    let column = numbers.next().unwrap_or(0);
+    (column, row)
 }
 
 fn winsize(config: &TerminalConfig) -> Winsize {

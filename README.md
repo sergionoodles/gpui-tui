@@ -19,14 +19,17 @@ stays the same; only the platform it starts with changes.
    and reads the pixels back.
 3. The frame goes to the terminal as a kitty graphics image. Locally it is
    passed through POSIX shared memory. When the terminal cannot read shared
-   memory, it is sent inline (zlib-compressed and base64-encoded).
+   memory (it runs on another machine, as over SSH), the frame is split into
+   tiles, and only the tiles that changed are sent inline (zlib-compressed
+   and base64-encoded).
 4. Terminal input (keys through the kitty keyboard protocol, SGR mouse with
    pixel coordinates, bracketed paste, focus, and resize reports) becomes
    GPUI input events.
 
 Frames are only rendered when GPUI asks for one. They are capped at 60 per
-second, and the terminal's acknowledgements make sure no more than two
-frames are in flight. An idle app sends nothing and uses no CPU.
+second (30 when sent inline), and the terminal's acknowledgements make sure
+no more than two frames are in flight. An idle app sends nothing and uses no
+CPU.
 
 ## Requirements
 
@@ -35,7 +38,8 @@ frames are in flight. An idle app sends nothing and uses no CPU.
   gpui-tui checks at startup that the terminal supports kitty graphics, and
   exits with an error otherwise.
 - **A GPU, or Mesa's software renderer.** Rendering uses wgpu (Vulkan or GL).
-  Mesa's llvmpipe also works without a GPU.
+  Mesa's llvmpipe also works without a GPU or display server (see
+  [Over SSH](#over-ssh)).
 - **Rust 1.98** or newer.
 
 ## Versions mapping
@@ -47,6 +51,7 @@ UI kit, must match.
 
 | gpui-tui | `gpui-pre` | Matching gpui-kit |
 |---|---|---|
+| 0.2.0 | 0.3.9 | 0.7.3 |
 | 0.1.0 | 0.3.9 | 0.7.3 |
 
 A new `gpui-pre` version means a new gpui-tui minor release; fixes for the
@@ -72,7 +77,7 @@ it:
 
 ```toml
 [dependencies]
-gpui-tui = { git = "<gpui-tui repository URL>", tag = "v0.1.0", optional = true }
+gpui-tui = { git = "<gpui-tui repository URL>", tag = "v0.2.0", optional = true }
 
 [features]
 tui = ["dep:gpui-tui"]
@@ -127,11 +132,60 @@ positional arguments does not mistake it for one of its own.
 | `GPUI_TUI=1` | Same as `--tui` | Off |
 | `GPUI_TUI_SCALE` | GPUI scale factor | `2` if cells are at least 24 px tall, otherwise `1` |
 | `GPUI_TUI_TRANSPORT` | `shm` (shared memory) or `direct` (inline) | `shm` when the terminal can read it |
-| `GPUI_TUI_MAX_FPS` | Frame rate cap | `60` |
+| `GPUI_TUI_MAX_FPS` | Frame rate cap | `60`; `30` when frames are sent inline |
+| `GPUI_TUI_RENDER_SCALE` | Fraction of the terminal's resolution to render at, in `(0, 1]`; the terminal scales frames up | `1`; when frames are sent inline, `1 / GPUI_TUI_SCALE` (half size on high-density displays) |
+| `GPUI_TUI_STATS=1` | Print fps, render and encode times, and bytes per frame every second | Off |
 | `GPUI_TUI_LOG` | File to append the app's stdout and stderr to | Captured and printed after exit |
 
 Anything the app prints while it runs would land on top of the image, so
 stdout and stderr are redirected for as long as the app runs.
+
+## Over SSH
+
+Run the app on the server through its normal sshd. `-t` gives it a terminal:
+
+```sh
+ssh -t server my-app --tui
+```
+
+The app runs on the server and only frames and input cross the connection.
+gpui-tui notices that the terminal cannot read its shared memory and
+switches to inline frames. Those are tuned for a network link:
+
+- Only the tiles of the frame that changed are sent, compressed.
+- Frames are rendered at one device pixel per GPUI pixel, so on a
+  high-density display they are half as wide and half as tall, and the
+  terminal scales them up. Text is a little softer in exchange for a quarter
+  of the pixels to render and send. Use `GPUI_TUI_RENDER_SCALE=1` for full
+  resolution.
+- Frames are capped at 30 per second.
+
+**The server** needs no GPU and no display server, but it needs Mesa so
+frames can be rendered on the CPU with llvmpipe. That means Mesa's EGL and
+DRI drivers: `mesa` on Arch, `libegl1`, `libegl-mesa0`, and
+`libgl1-mesa-dri` on Debian and Ubuntu, and `mesa-libEGL` and
+`mesa-dri-drivers` on Fedora. If neither a GPU nor Mesa is found, the app
+exits with an error that says so. It also needs at least one font, unless
+the app bundles its own. Minimal server images often have none, and GPUI
+then panics with "failed to resolve font". On Debian and Ubuntu, install
+`fonts-ibm-plex` (the font GPUI uses for `.SystemUIFont`) and
+`fonts-dejavu-core` (which includes a monospace font).
+
+**What changes compared to a local session:**
+- Links and files are not opened (`open_url`, `reveal_path`), since that
+  would happen on the server.
+- The file picker browses the server's files.
+- Copying still reaches your local clipboard through OSC 52.
+- Credential storage (Secret Service) is usually unreachable, so apps need a
+  fallback.
+- If the connection drops, the app quits, but nothing can restore your local
+  terminal's modes. Run `reset` if mouse or keyboard input looks wrong
+  afterwards.
+
+To see what a session costs, run the app with
+`GPUI_TUI_STATS=1 GPUI_TUI_LOG=/tmp/app.log` and read the log. Each line
+shows frames per second, render and encode times, bytes per frame and per
+second, and how many tiles were sent out of the total.
 
 ## What maps to what
 
@@ -214,12 +268,12 @@ out of desktop builds.
 - **Linux only, kitty and Ghostty only.** Terminals without the kitty
   graphics protocol are rejected. Running inside tmux or screen does not
   work either.
-- **SSH is not supported yet.** Frames can already be sent inline, which is
-  what a remote session needs, but bandwidth, frame rate, and software
-  rendering on GPU-less servers have not been tuned or tested.
-- **The whole frame is resent on every change.** Locally, shared memory
-  makes this cheap. A large window still costs a few milliseconds per frame
-  to render and read back.
+- **Locally, the whole frame is resent on every change.** Shared memory
+  makes this cheap, but a large window still costs a few milliseconds per
+  frame to render and read back. Inline frames send only changed tiles.
+- **Software rendering is slower.** On a server without a GPU, each frame is
+  rendered on the CPU, so large or busy windows can lag. Lower
+  `GPUI_TUI_RENDER_SCALE` or `GPUI_TUI_MAX_FPS` if they do.
 - **The clipboard can only be written.** Terminals rarely let programs read
   the clipboard, so `cx.read_from_clipboard()` returns what the app itself
   last copied. Pasting through the terminal (bracketed paste) does work.
@@ -256,8 +310,8 @@ cargo test --workspace
 
 The end-to-end tests (`crates/gpui-tui/tests/terminal.rs`) run a real GPUI
 app inside the fake terminal. They cover clicks, typing, resizing, the file
-picker, shared memory and inline frames, idle CPU use, and terminal restore.
-They need a GPU or Mesa.
+picker, shared memory and inline (tiled, half-resolution) frames, idle CPU
+use, and terminal restore. They need a GPU or Mesa.
 
 ## License
 

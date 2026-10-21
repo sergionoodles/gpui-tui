@@ -1,7 +1,7 @@
 //! The controlling terminal: raw mode, size, and non-blocking input.
 
 use std::fs::File;
-use std::io::{self, Read as _, Write as _};
+use std::io::{self, Write as _};
 use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
 use std::time::Duration;
 
@@ -64,13 +64,7 @@ impl Tty {
 
     /// Reads whatever input is available without blocking. Returns 0 when there is none.
     pub fn read_available(&self, buffer: &mut [u8]) -> io::Result<usize> {
-        let mut input = &self.input;
-        match input.read(buffer) {
-            Ok(count) => Ok(count),
-            Err(error) if error.kind() == io::ErrorKind::WouldBlock => Ok(0),
-            Err(error) if error.kind() == io::ErrorKind::Interrupted => Ok(0),
-            Err(error) => Err(error),
-        }
+        read_nonblocking(&self.input, buffer)
     }
 
     /// Waits until input is available or `timeout` passes. Returns whether input is available.
@@ -82,6 +76,22 @@ impl Tty {
             Err(rustix::io::Errno::INTR) => Ok(false),
             Err(error) => Err(error.into()),
         }
+    }
+}
+
+/// Reads without blocking. Returns 0 when no input is waiting, and an error when the other side
+/// hung up (e.g. the SSH connection dropped), so the app quits instead of polling a dead
+/// terminal forever.
+fn read_nonblocking(mut input: impl io::Read, buffer: &mut [u8]) -> io::Result<usize> {
+    match input.read(buffer) {
+        Ok(0) if !buffer.is_empty() => Err(io::Error::new(
+            io::ErrorKind::UnexpectedEof,
+            "the terminal was closed",
+        )),
+        Ok(count) => Ok(count),
+        Err(error) if error.kind() == io::ErrorKind::WouldBlock => Ok(0),
+        Err(error) if error.kind() == io::ErrorKind::Interrupted => Ok(0),
+        Err(error) => Err(error),
     }
 }
 
@@ -98,4 +108,25 @@ fn open_tty(extra_flags: OFlags) -> io::Result<OwnedFd> {
 /// Restores a terminal mode saved by [`Tty::original_mode`].
 pub fn restore_mode(output: impl AsFd, mode: &Termios) -> io::Result<()> {
     Ok(termios::tcsetattr(output, OptionalActions::Now, mode)?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hang_up_is_an_error_not_an_empty_read() -> io::Result<()> {
+        let (reader, mut writer) = io::pipe()?;
+        writer.write_all(b"x")?;
+        drop(writer);
+
+        let mut buffer = [0; 8];
+        assert_eq!(read_nonblocking(&reader, &mut buffer)?, 1);
+        let error = read_nonblocking(&reader, &mut buffer).err();
+        assert_eq!(
+            error.map(|error| error.kind()),
+            Some(io::ErrorKind::UnexpectedEof)
+        );
+        Ok(())
+    }
 }

@@ -2,7 +2,88 @@
 
 Status: Phases 0–2 implemented and checked in Ghostty. Phase 3 (Qwerio
 locally) implemented; the manual check of Qwerio's main flows is pending.
-See "Progress" below.
+Phase 4 (SSH) implemented and released as v0.2.0; the hello example runs
+over SSH on an Ubuntu 24.04 server without a GPU. See "Progress" below.
+
+## Progress (2026-10-21): Phase 4
+
+**Decisions:**
+- You test on a real remote host yourself; the code work is verified here
+  with the fake terminal and with software rendering forced locally.
+- Qwerio's keychain fallback is a later, separate task.
+- Only llvmpipe is targeted; vulkan-swrast (lavapipe) was not installed
+  here.
+- The SSH tuning keys on the **transport**, not on `SSH_CONNECTION`: when
+  the terminal cannot read shared memory, frames go inline, and that is
+  what makes bytes and CPU expensive. `ssh localhost` therefore still uses
+  shared memory, which is correct. Force `GPUI_TUI_TRANSPORT=direct` to try
+  the remote path locally. Links stay keyed on the SSH variables, because
+  that is about where `xdg-open` would run.
+
+**Done:**
+- **Dirty tiles (inline only):** `gpui-tui-term`'s `tiles` module splits
+  the frame into cell-aligned tiles of about 128 frame pixels. Each tile is
+  its own kitty image (IDs from 100), placed at its cell with `c=`/`r=`.
+  Only tiles whose pixels changed are sent. When the frame size or cell
+  area changes, everything is deleted (`a=d,d=A`) and resent in the same
+  synchronized update. Separate images were chosen over kitty's frame
+  editing (`a=f`) because Ghostty does not implement the animation
+  commands. Tile sizes prefer a cell count with a whole number of pixels,
+  so the terminal scales every tile by the same factor and no seams show.
+- **RGB for opaque tiles:** `f=24` drops a quarter of the bytes before
+  compression. Tiles with any transparency keep RGBA.
+- **Render scale:** `Options::render_scale` and `GPUI_TUI_RENDER_SCALE`.
+  GPUI's scale factor becomes `display scale × render scale` while the
+  logical window size and mouse mapping stay the same, and the terminal
+  scales frames up. It defaults to `1 / display scale` inline (half size on
+  high-density displays) and to `1` over shared memory.
+- **Frame cap:** `Options::max_frames_per_second` is now an `Option`.
+  `None` means 60 over shared memory and 30 inline. This changes the public
+  `Options`, but Qwerio only uses `Options::from_env()`, so it is not
+  affected.
+- **Stats:** `GPUI_TUI_STATS=1` prints fps, render and encode times,
+  KiB per frame and per second, and tiles sent out of the total, once per
+  second, to the log.
+- **Hang-up:** a read of 0 bytes from the tty is now treated as a closed
+  terminal, and the app quits. Before, it counted as "no input", so a
+  process that survived SIGHUP would spin on a dead terminal.
+- **No renderer:** the error now says to install Mesa for llvmpipe.
+- **Fake terminal:** it tracks the cursor, composites each image at its
+  cell scaled to its `c`/`r` box, and counts a frame when a synchronized
+  update ends.
+- **Verified:**
+  - Unit tests for the tile layout, tile diffing, RGB extraction, presenter
+    tile output, options, and stats.
+  - A new e2e test: inline frames on a high-density terminal (16×32 cells),
+    rendered at half resolution, with click, typing, and resize.
+  - All e2e tests pass with the GPU hidden and no display
+    (`VK_DRIVER_FILES` pointing nowhere, Mesa's EGL vendor only,
+    `LIBGL_ALWAYS_SOFTWARE=1`, no `DISPLAY`/`WAYLAND_DISPLAY`), so
+    llvmpipe renders headless.
+  - Debug-build stats for the e2e scene: 15 tiles per frame at half
+    resolution versus 28 at full, and about 7–11 KiB per frame.
+
+- **Real server:** the `hello` example works over SSH on an Ubuntu 24.04.3
+  server without a GPU, rendering with llvmpipe. It was built in a
+  `rust:1.98-bookworm` container, because a glibc older than the server's
+  is needed. The server needed Mesa (`libegl1`, `libegl-mesa0`,
+  `libgl1-mesa-dri`) and fonts: without any, GPUI panics with "failed to
+  resolve font '.SystemUIFont'", since gpui-tui (like GPUI's Linux backend)
+  maps that alias to IBM Plex Sans and nothing bundles fonts.
+  `fonts-ibm-plex` and `fonts-dejavu-core` fixed it.
+
+**Not done yet:**
+- Measured numbers from the server (fps, bytes per frame, server CPU with
+  `GPUI_TUI_STATS=1`), and Qwerio over SSH. Qwerio needs to move to
+  v0.2.0.
+- Bundling fonts in gpui-tui, so apps also run on servers without any
+  fonts. Not needed while servers get fonts installed.
+- Restoring the terminal on SIGTERM. A signal handler needs a new
+  dependency (`signal-hook`, or `libc` directly), which is waiting for your
+  OK. SIGHUP needs nothing: over SSH it means the terminal is already gone.
+- Qwerio's keychain fallback (separate task).
+- Possible later tuning, if the stats show a need: compressing tiles on
+  worker threads, and the zlib level (currently the fastest).
 
 ## Progress (2026-10-21): Phase 3
 
