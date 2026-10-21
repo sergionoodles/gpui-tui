@@ -38,6 +38,24 @@ frames are in flight. An idle app sends nothing and uses no CPU.
   Mesa's llvmpipe also works without a GPU.
 - **Rust 1.98** or newer.
 
+## Versions mapping
+
+`gpui-pre` changes its platform traits between releases (0.3.9 added three
+required methods), so each gpui-tui release supports exactly the `gpui-pre`
+version it was tested with. The app's `gpui-pre` version, often chosen by its
+UI kit, must match.
+
+| gpui-tui | `gpui-pre` | Matching gpui-kit |
+|---|---|---|
+| 0.1.0 | 0.3.9 | 0.7.3 |
+
+A new `gpui-pre` version means a new gpui-tui minor release; fixes for the
+same `gpui-pre` are patch releases. A new `gpui-pre` release does not affect
+an existing gpui-tui release, because the version is pinned exactly.
+
+To try other versions, run `scripts/check-gpui-versions.sh <version>…`. It
+builds and tests a copy of the workspace against each version.
+
 ## Try it
 
 ```sh
@@ -177,24 +195,6 @@ official `gpui` crate, for two reasons:
 
 If an official `gpui` release offers the same extension points, gpui-tui can
 move to it.
-
-### Supported versions
-
-`gpui-pre` changes its platform traits between releases (0.3.9 added three
-required methods), so each gpui-tui release supports exactly the `gpui-pre`
-version it was tested with. The app's `gpui-pre` version, often chosen by its
-UI kit, must match.
-
-| gpui-tui | `gpui-pre` | Matching gpui-kit |
-|---|---|---|
-| 0.1.0 | 0.3.9 | 0.7.3 |
-
-A new `gpui-pre` version means a new gpui-tui minor release; fixes for the
-same `gpui-pre` are patch releases. A new `gpui-pre` release does not affect
-an existing gpui-tui release, because the version is pinned exactly.
-
-To try other versions, run `scripts/check-gpui-versions.sh <version>…`. It
-builds and tests a copy of the workspace against each version.
 
 ### `bench-support`
 
