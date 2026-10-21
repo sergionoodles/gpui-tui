@@ -49,10 +49,11 @@ required methods), so each gpui-tui release supports exactly the `gpui-pre`
 version it was tested with. The app's `gpui-pre` version, often chosen by its
 UI kit, must match.
 
+The table lists the latest gpui-tui release for each `gpui-pre` version.
+
 | gpui-tui | `gpui-pre` | Matching gpui-kit |
 |---|---|---|
 | 0.2.0 | 0.3.9 | 0.7.3 |
-| 0.1.0 | 0.3.9 | 0.7.3 |
 
 A new `gpui-pre` version means a new gpui-tui minor release; fixes for the
 same `gpui-pre` are patch releases. A new `gpui-pre` release does not affect
