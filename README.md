@@ -8,6 +8,9 @@ each frame offscreen and shows it in the terminal as an image through the
 Keyboard and mouse input from the terminal goes back to GPUI. The app's code
 stays the same; only the platform it starts with changes.
 
+It works locally and over SSH, on servers without a GPU (see
+[Over SSH](#over-ssh)).
+
 ![The hello example running in Ghostty](docs/images/hello.png)
 
 *The `hello` example running in Ghostty.*
@@ -143,50 +146,23 @@ stdout and stderr are redirected for as long as the app runs.
 
 ## Over SSH
 
-Run the app on the server through its normal sshd. `-t` gives it a terminal:
+Apps also run on a remote Linux server without a GPU or display server:
 
 ```sh
 ssh -t server my-app --tui
 ```
 
-The app runs on the server and only frames and input cross the connection.
-gpui-tui notices that the terminal cannot read its shared memory and
-switches to inline frames. Those are tuned for a network link:
+The app runs on the server, and only frames and input cross the connection.
+gpui-tui notices that the terminal cannot read its shared memory and tunes
+itself for the network. It sends only the tiles of the frame that changed,
+renders at a lower resolution on high-density displays, and caps frames at
+30 per second. The server needs Mesa (for CPU rendering with llvmpipe), at
+least one font, and a binary built against a glibc no newer than its own.
 
-- Only the tiles of the frame that changed are sent, compressed.
-- Frames are rendered at one device pixel per GPUI pixel, so on a
-  high-density display they are half as wide and half as tall, and the
-  terminal scales them up. Text is a little softer in exchange for a quarter
-  of the pixels to render and send. Use `GPUI_TUI_RENDER_SCALE=1` for full
-  resolution.
-- Frames are capped at 30 per second.
-
-**The server** needs no GPU and no display server, but it needs Mesa so
-frames can be rendered on the CPU with llvmpipe. That means Mesa's EGL and
-DRI drivers: `mesa` on Arch, `libegl1`, `libegl-mesa0`, and
-`libgl1-mesa-dri` on Debian and Ubuntu, and `mesa-libEGL` and
-`mesa-dri-drivers` on Fedora. If neither a GPU nor Mesa is found, the app
-exits with an error that says so. It also needs at least one font, unless
-the app bundles its own. Minimal server images often have none, and GPUI
-then panics with "failed to resolve font". On Debian and Ubuntu, install
-`fonts-ibm-plex` (the font GPUI uses for `.SystemUIFont`) and
-`fonts-dejavu-core` (which includes a monospace font).
-
-**What changes compared to a local session:**
-- Links and files are not opened (`open_url`, `reveal_path`), since that
-  would happen on the server.
-- The file picker browses the server's files.
-- Copying still reaches your local clipboard through OSC 52.
-- Credential storage (Secret Service) is usually unreachable, so apps need a
-  fallback.
-- If the connection drops, the app quits, but nothing can restore your local
-  terminal's modes. Run `reset` if mouse or keyboard input looks wrong
-  afterwards.
-
-To see what a session costs, run the app with
-`GPUI_TUI_STATS=1 GPUI_TUI_LOG=/tmp/app.log` and read the log. Each line
-shows frames per second, render and encode times, bytes per frame and per
-second, and how many tiles were sent out of the total.
+[GPUI-TUI-OVER-SSH.md](GPUI-TUI-OVER-SSH.md) is the full runbook, written
+for AI coding agents. It covers server packages per distro, building in a
+container, checking the binary, running and measuring, tuning, and
+troubleshooting.
 
 ## What maps to what
 
