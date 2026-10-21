@@ -1,0 +1,31 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "MIT"
+publish = false
+
+[workspace.lints.clippy]
+dbg_macro = "deny"
+todo = "deny"
+unwrap_used = "warn"
+
+[workspace.dependencies]
+anyhow = "1.0.104"
+base64 = "0.22.1"
+calloop = "0.14.5"
+flate2 = "1.1.10"
+futures = "0.3.34"
+gpui = { package = "gpui-pre", version = "=0.3.9", default-features = false, features = ["font-kit"] }
+gpui-tui-term = { path = "crates/gpui-tui-term" }
+gpui-tui-testterm = { path = "crates/gpui-tui-testterm" }
+gpui_wgpu = { package = "gpui-pre-wgpu", version = "=0.3.9", features = ["bench-support"] }
+image = { version = "0.25.10", default-features = false, features = ["png"] }
+log = "0.4.34"
+raw-window-handle = "0.6.2"
+rustix = { version = "1.1.5", features = ["termios", "fs", "shm", "stdio", "process", "event", "pty"] }
+uuid = "1.28.0"

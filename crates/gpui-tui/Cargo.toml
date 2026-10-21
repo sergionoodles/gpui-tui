@@ -1,0 +1,28 @@
+[package]
+name = "gpui-tui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+calloop = { workspace = true }
+futures = { workspace = true }
+gpui = { workspace = true }
+gpui-tui-term = { workspace = true }
+gpui_wgpu = { workspace = true }
+log = { workspace = true }
+raw-window-handle = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+gpui-tui-testterm = { workspace = true }
+
+[[test]]
+name = "terminal"
+harness = false

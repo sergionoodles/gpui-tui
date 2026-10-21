@@ -1,0 +1,17 @@
+[package]
+name = "gpui-tui-testterm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+base64 = { workspace = true }
+flate2 = { workspace = true }
+image = { workspace = true }
+rustix = { workspace = true }
