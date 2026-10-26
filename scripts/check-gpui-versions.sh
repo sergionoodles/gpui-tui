@@ -7,8 +7,8 @@
 
 set -euo pipefail
 
-SUPPORTED_VERSIONS=(0.3.9)
-CURRENT_PIN="=0.3.9"
+SUPPORTED_VERSIONS=(0.3.10)
+CURRENT_PIN="=0.3.10"
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 scratch_root="${GPUI_TUI_MATRIX_DIR:-${TMPDIR:-/tmp}/gpui-tui-version-matrix}"

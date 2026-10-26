@@ -9,9 +9,10 @@ use anyhow::{Context as _, Result, anyhow};
 use futures::channel::oneshot;
 use gpui::{
     Action, ActivityGuard, AnyWindowHandle, BackgroundExecutor, ClipboardItem, CursorStyle,
-    DummyKeyboardMapper, ForegroundExecutor, Keymap, Menu, MenuItem, PathPromptOptions, Platform,
-    PlatformDisplay, PlatformKeyboardLayout, PlatformKeyboardMapper, PlatformTextSystem,
-    PlatformWindow, Task, ThermalState, WindowAppearance, WindowParams,
+    DummyKeyboardMapper, ForegroundExecutor, Keymap, Menu, MenuItem, OperatingSystem,
+    PathPromptOptions, Platform, PlatformDisplay, PlatformInfo, PlatformKeyboardLayout,
+    PlatformKeyboardMapper, PlatformTarget, PlatformTextSystem, PlatformWindow, Task, ThermalState,
+    WindowAppearance, WindowParams,
 };
 
 use super::{TuiKeyboardLayout, TuiPlatform};
@@ -19,6 +20,13 @@ use crate::runtime::{self, PickerReply};
 use crate::window::TuiWindow;
 
 impl Platform for TuiPlatform {
+    fn platform_info(&self) -> PlatformInfo {
+        PlatformInfo {
+            os: OperatingSystem::Linux,
+            target: PlatformTarget::Native,
+        }
+    }
+
     fn background_executor(&self) -> BackgroundExecutor {
         self.background_executor.clone()
     }

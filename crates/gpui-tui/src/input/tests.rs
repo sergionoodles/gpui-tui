@@ -163,8 +163,10 @@ fn wheel_scrolls_lines_and_shift_scrolls_horizontally() {
     let position = point(px(0.0), px(0.0));
     let scroll_delta = |inputs: Vec<PlatformInput>| {
         inputs.into_iter().find_map(|input| match input {
-            PlatformInput::ScrollWheel(ScrollWheelEvent {
+            PlatformInput::Scroll(ScrollEvent {
                 delta: ScrollDelta::Lines(lines),
+                source: ScrollSource::Pointer,
+                touch_phase: TouchPhase::Moved,
                 ..
             }) => Some(lines),
             _ => None,
@@ -188,4 +190,42 @@ fn wheel_scrolls_lines_and_shift_scrolls_horizontally() {
         scroll_delta(translator.mouse(&shift_down, position, Instant::now())),
         Some(point(-SCROLL_LINES, 0.0))
     );
+}
+
+#[test]
+fn wheel_scroll_preserves_position_and_modifiers_in_every_direction() {
+    let position = point(px(12.0), px(34.0));
+    let modifiers = term::Modifiers {
+        control: true,
+        alt: true,
+        ..term::Modifiers::default()
+    };
+    for (direction, expected) in [
+        (ScrollDirection::Up, point(0.0, SCROLL_LINES)),
+        (ScrollDirection::Down, point(0.0, -SCROLL_LINES)),
+        (ScrollDirection::Left, point(SCROLL_LINES, 0.0)),
+        (ScrollDirection::Right, point(-SCROLL_LINES, 0.0)),
+    ] {
+        let mut translator = InputTranslator::default();
+        let event = MouseEvent {
+            modifiers,
+            ..mouse(MouseEventKind::Scroll(direction))
+        };
+        let inputs = translator.mouse(&event, position, Instant::now());
+        let Some(PlatformInput::Scroll(scroll)) = inputs.last() else {
+            panic!("expected a scroll event, got {inputs:?}");
+        };
+        assert_eq!(scroll.position, position);
+        assert_eq!(
+            scroll.modifiers,
+            Modifiers {
+                control: true,
+                alt: true,
+                ..Modifiers::default()
+            }
+        );
+        assert_eq!(scroll.source, ScrollSource::Pointer);
+        assert_eq!(scroll.touch_phase, TouchPhase::Moved);
+        assert!(matches!(scroll.delta, ScrollDelta::Lines(lines) if lines == expected));
+    }
 }

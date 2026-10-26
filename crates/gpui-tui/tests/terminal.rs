@@ -10,8 +10,8 @@ use std::time::Duration;
 
 use anyhow::{Context as _, Result, ensure};
 use gpui::{
-    App, Context, FocusHandle, KeyDownEvent, PathPromptOptions, Rgba, Window, WindowOptions, div,
-    prelude::*, rgb,
+    App, Context, FocusHandle, KeyDownEvent, OperatingSystem, PathPromptOptions, PlatformTarget,
+    Rgba, Window, WindowOptions, div, prelude::*, rgb,
 };
 use gpui_tui_testterm::{FakeTerminal, Screen, TerminalConfig};
 
@@ -108,6 +108,8 @@ impl Render for Halves {
 
 fn run_app() {
     gpui_tui::application().run(|cx: &mut App| {
+        assert_eq!(cx.platform_info().os, OperatingSystem::Linux);
+        assert_eq!(cx.platform_info().target, PlatformTarget::Native);
         let opened = cx.open_window(WindowOptions::default(), |window, cx| {
             cx.new(|cx| {
                 let focus_handle = cx.focus_handle();

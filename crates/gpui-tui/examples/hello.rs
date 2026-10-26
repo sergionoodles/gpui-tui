@@ -3,8 +3,8 @@
 //! Run inside kitty or Ghostty: `cargo run -p gpui-tui --example hello`
 
 use gpui::{
-    App, Context, FocusHandle, KeyDownEvent, MouseButton, ScrollWheelEvent, Window, WindowOptions,
-    div, prelude::*, px, rgb,
+    App, Context, FocusHandle, KeyDownEvent, MouseButton, ScrollEvent, Window, WindowOptions, div,
+    prelude::*, px, rgb,
 };
 
 struct Hello {
@@ -19,10 +19,10 @@ impl Render for Hello {
         div()
             .track_focus(&self.focus_handle)
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
-                this.last_key = event.keystroke.to_string();
+                this.last_key = event.keystroke.unparse(cx.platform_info().os);
                 cx.notify();
             }))
-            .on_scroll_wheel(cx.listener(|this, event: &ScrollWheelEvent, window, cx| {
+            .on_scroll(cx.listener(|this, event: &ScrollEvent, window, cx| {
                 this.scrolled += f32::from(event.delta.pixel_delta(window.line_height()).y);
                 cx.notify();
             }))

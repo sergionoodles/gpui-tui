@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use gpui::{
     KeyDownEvent, KeyUpEvent, Keystroke, Modifiers, ModifiersChangedEvent, MouseButton,
     MouseDownEvent, MouseMoveEvent, MouseUpEvent, NavigationDirection, Pixels, PlatformInput,
-    Point, ScrollDelta, ScrollWheelEvent, TouchPhase, point, px,
+    Point, ScrollDelta, ScrollEvent, ScrollSource, TouchPhase, point, px,
 };
 use gpui_tui_term::input::{self as term, Key, KeyEventKind, MouseEventKind, ScrollDirection};
 
@@ -124,11 +124,12 @@ impl InputTranslator {
                 inputs.push(self.move_input(position, modifiers));
             }
             MouseEventKind::Scroll(direction) => {
-                inputs.push(PlatformInput::ScrollWheel(ScrollWheelEvent {
+                inputs.push(PlatformInput::Scroll(ScrollEvent {
                     position,
                     delta: ScrollDelta::Lines(scroll_lines(direction, modifiers.shift)),
                     modifiers,
                     touch_phase: TouchPhase::Moved,
+                    source: ScrollSource::Pointer,
                 }));
             }
         }

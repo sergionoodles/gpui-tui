@@ -47,8 +47,8 @@ CPU.
 
 ## Versions mapping
 
-`gpui-pre` changes its platform traits between releases (0.3.9 added three
-required methods), so each gpui-tui release supports exactly the `gpui-pre`
+`gpui-pre` changes its platform traits between releases (0.3.10 added
+`Platform::platform_info`), so each gpui-tui release supports exactly the `gpui-pre`
 version it was tested with. The app's `gpui-pre` version, often chosen by its
 UI kit, must match.
 
@@ -56,6 +56,7 @@ The table lists the latest gpui-tui release for each `gpui-pre` version.
 
 | gpui-tui | `gpui-pre` | Matching gpui-kit |
 |---|---|---|
+| 0.3.0 | 0.3.10 | 0.8.1 |
 | 0.2.0 | 0.3.9 | 0.7.3, 0.8.0 |
 
 A new `gpui-pre` version means a new gpui-tui minor release; fixes for the
@@ -64,6 +65,13 @@ an existing gpui-tui release, because the version is pinned exactly.
 
 To try other versions, run `scripts/check-gpui-versions.sh <version>…`. It
 builds and tests a copy of the workspace against each version.
+
+GPUI Kit 0.8.1 changes several re-exported GPUI APIs: scroll handlers use
+`ScrollEvent` and `on_scroll`, scroll events include a `ScrollSource`, and
+keystroke formatting and modifier helpers require the application's OS or
+context. See the [upstream migration notes](https://github.com/longbridge/gpui-kit/releases/tag/v0.8.1#upstream-gpui-compatibility)
+when upgrading an application from Kit 0.8.0. gpui-tui 0.3.0 uses the matching
+snapshot; applications on older Kit releases should keep gpui-tui 0.2.0.
 
 ## Try it
 
@@ -81,7 +89,7 @@ it:
 
 ```toml
 [dependencies]
-gpui-tui = { git = "<gpui-tui repository URL>", tag = "v0.2.0", optional = true }
+gpui-tui = { git = "<gpui-tui repository URL>", tag = "v0.3.0", optional = true }
 
 [features]
 tui = ["dep:gpui-tui"]
