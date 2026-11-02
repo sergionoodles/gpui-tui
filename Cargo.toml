@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.3.0"
+version = "0.3.1"
 edition = "2024"
 rust-version = "1.98"
 license = "MIT"
@@ -21,6 +21,8 @@ calloop = "0.14.5"
 flate2 = "1.1.10"
 futures = "0.3.34"
 gpui = { package = "gpui-pre", version = "=0.3.10", default-features = false, features = ["font-kit"] }
+gpui-fast = { package = "gpui-fast", version = "=0.1.12", default-features = false, features = ["font-kit"] }
+gpui-fast-wgpu = { package = "gpui-fast-wgpu", version = "=0.1.12", features = ["bench-support"] }
 gpui-tui-term = { path = "crates/gpui-tui-term" }
 gpui-tui-testterm = { path = "crates/gpui-tui-testterm" }
 gpui_wgpu = { package = "gpui-pre-wgpu", version = "=0.3.10", features = ["bench-support"] }

@@ -9,11 +9,16 @@ publish.workspace = true
 [lints]
 workspace = true
 
+[features]
+gpui-fast = ["dep:gpui-fast", "dep:gpui-fast-wgpu"]
+
 [dependencies]
 anyhow = { workspace = true }
 calloop = { workspace = true }
 futures = { workspace = true }
 gpui = { workspace = true }
+gpui-fast = { workspace = true, optional = true }
+gpui-fast-wgpu = { workspace = true, optional = true }
 gpui-tui-term = { workspace = true }
 gpui_wgpu = { workspace = true }
 log = { workspace = true }

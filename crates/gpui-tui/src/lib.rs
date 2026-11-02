@@ -4,14 +4,23 @@
 //! terminal keyboard and mouse input is fed back to GPUI.
 //!
 //! ```no_run
+//! # use gpui_tui::gpui;
 //! let (use_tui, _args) = gpui_tui::take_tui_flag(std::env::args_os());
 //! let app = if use_tui {
 //!     gpui_tui::application()
 //! } else {
 //!     gpui_platform::application()
 //! };
-//! # mod gpui_platform { pub fn application() -> gpui::Application { unimplemented!() } }
+//! # mod gpui_platform { pub fn application() -> gpui_tui::gpui::Application { unimplemented!() } }
 //! ```
+
+/// The GPUI core selected by this build's `gpui-fast` feature.
+#[cfg(not(feature = "gpui-fast"))]
+pub extern crate gpui;
+#[cfg(feature = "gpui-fast")]
+pub extern crate gpui_fast as gpui;
+#[cfg(feature = "gpui-fast")]
+extern crate gpui_fast_wgpu as gpui_wgpu;
 
 mod cursor;
 mod dispatcher;
