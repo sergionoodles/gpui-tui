@@ -6,6 +6,7 @@ use gpui::{
     App, Context, FocusHandle, KeyDownEvent, MouseButton, ScrollEvent, Window, WindowOptions, div,
     prelude::*, px, rgb,
 };
+use gpui_tui::gpui;
 
 struct Hello {
     focus_handle: FocusHandle,

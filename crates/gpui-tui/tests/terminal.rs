@@ -13,6 +13,7 @@ use gpui::{
     App, Context, FocusHandle, KeyDownEvent, OperatingSystem, PathPromptOptions, PlatformTarget,
     Rgba, Window, WindowOptions, div, prelude::*, rgb,
 };
+use gpui_tui::gpui;
 use gpui_tui_testterm::{FakeTerminal, Screen, TerminalConfig};
 
 const CHILD_ENV: &str = "GPUI_TUI_E2E_APP";

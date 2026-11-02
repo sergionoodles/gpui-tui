@@ -18,8 +18,9 @@ It works locally and over SSH, on servers without a GPU (see
 ## How it works
 
 1. GPUI lays out and paints the window as usual, producing a `Scene`.
-2. `gpui-pre-wgpu`'s headless renderer draws the scene into a GPU texture
-   and reads the pixels back.
+2. The selected wgpu headless renderer (`gpui-pre-wgpu` by default, or
+   `gpui-fast-wgpu` with the `gpui-fast` feature) draws the scene into a GPU
+   texture and reads the pixels back.
 3. The frame goes to the terminal as a kitty graphics image. Locally it is
    passed through POSIX shared memory. When the terminal cannot read shared
    memory (it runs on another machine, as over SSH), the frame is split into
@@ -47,16 +48,16 @@ CPU.
 
 ## Versions mapping
 
-`gpui-pre` changes its platform traits between releases (0.3.10 added
-`Platform::platform_info`), so each gpui-tui release supports exactly the `gpui-pre`
-version it was tested with. The app's `gpui-pre` version, often chosen by its
-UI kit, must match.
+The default backend uses `gpui-pre`, which changes its platform traits between
+releases (0.3.10 added `Platform::platform_info`), so each gpui-tui release
+supports exactly the `gpui-pre` version it was tested with. The app's
+`gpui-pre` version, often chosen by its UI kit, must match.
 
 The table lists the latest gpui-tui release for each `gpui-pre` version.
 
 | gpui-tui | `gpui-pre` | Matching gpui-kit |
 |---|---|---|
-| 0.3.0 | 0.3.10 | 0.8.1 |
+| 0.3.1 | 0.3.10 | 0.8.1 |
 | 0.2.0 | 0.3.9 | 0.7.3, 0.8.0 |
 
 A new `gpui-pre` version means a new gpui-tui minor release; fixes for the
@@ -70,7 +71,7 @@ GPUI Kit 0.8.1 changes several re-exported GPUI APIs: scroll handlers use
 `ScrollEvent` and `on_scroll`, scroll events include a `ScrollSource`, and
 keystroke formatting and modifier helpers require the application's OS or
 context. See the [upstream migration notes](https://github.com/longbridge/gpui-kit/releases/tag/v0.8.1#upstream-gpui-compatibility)
-when upgrading an application from Kit 0.8.0. gpui-tui 0.3.0 uses the matching
+when upgrading an application from Kit 0.8.0. gpui-tui 0.3.1 uses the matching
 snapshot; applications on older Kit releases should keep gpui-tui 0.2.0.
 
 ## Try it
@@ -89,7 +90,7 @@ it:
 
 ```toml
 [dependencies]
-gpui-tui = { git = "<gpui-tui repository URL>", tag = "v0.3.0", optional = true }
+gpui-tui = { git = "<gpui-tui repository URL>", tag = "v0.3.1", optional = true }
 
 [features]
 tui = ["dep:gpui-tui"]
@@ -136,6 +137,52 @@ positional arguments does not mistake it for one of its own.
 
 [Qwerio](https://github.com/sergionoodles/qwerio) uses gpui-tui this way:
 `qwerio --tui`.
+
+### GPUI Fast
+
+Enable the optional `gpui-fast` Cargo feature to use
+[GPUI Fast](https://github.com/longbridge/gpui-fast) 0.1.12 for both the GPUI
+core and the offscreen renderer. Without this feature, gpui-tui uses
+`gpui-pre` 0.3.10.
+
+Try the example with GPUI Fast inside kitty or Ghostty:
+
+```sh
+cargo run -p gpui-tui --example hello --features gpui-fast
+```
+
+For GPUI Kit apps, forward the feature to both crates so their GPUI types
+match:
+
+```toml
+[dependencies]
+gpui-kit = "=0.8.1"
+gpui-tui = { git = "<gpui-tui repository URL>", tag = "v0.3.1", optional = true }
+
+[features]
+tui = ["dep:gpui-tui"]
+gpui-fast = ["gpui-kit/gpui-fast", "gpui-tui?/gpui-fast"]
+```
+
+Build or run an app exposing these features with:
+
+```sh
+cargo build --features tui,gpui-fast
+cargo run --features tui,gpui-fast -- --tui
+```
+
+This selects the engine at compile time. `--tui` still selects terminal mode
+at startup. Omit `gpui-fast` to build with the default engine. The `?` in the
+feature forwarding keeps the terminal dependency optional for desktop-only
+builds.
+
+Apps that depend directly on GPUI must also select the matching core.
+Standalone terminal apps can import it through `gpui_tui::gpui`, which
+re-exports the selected engine.
+
+GPUI Fast reuses unchanged views and layout work. Frames still pass through
+the same kitty graphics transport, with the same SSH resolution and frame
+rate defaults.
 
 ### Configuration
 
@@ -214,8 +261,9 @@ opens it.
 ## Why `gpui-pre`
 
 GPUI is developed inside the [Zed](https://github.com/zed-industries/zed)
-repository. gpui-tui depends on [`gpui-pre`](https://crates.io/crates/gpui-pre),
-which is published to crates.io about once a week as a snapshot of Zed's GPUI
+repository. gpui-tui's default backend depends on
+[`gpui-pre`](https://crates.io/crates/gpui-pre), which is published to
+crates.io about once a week as a snapshot of Zed's GPUI
 (for example, `gpui-pre` 0.3.9 is `zed@93d7456`). It does not use the
 official `gpui` crate, for two reasons:
 
@@ -230,15 +278,16 @@ official `gpui` crate, for two reasons:
     (`WgpuHeadlessRenderer`) is what gpui-tui renders with.
 - **GPUI apps already build on it.** UI kits such as
   [gpui-kit](https://crates.io/crates/gpui-kit) build on `gpui-pre`. An app
-  can only contain one GPUI, so gpui-tui uses the same one.
+  and its terminal backend must use matching GPUI types. The `gpui-fast`
+  feature switches both to GPUI Fast when enabled in each crate.
 
 If an official `gpui` release offers the same extension points, gpui-tui can
 move to it.
 
 ### `bench-support`
 
-`gpui-pre-wgpu` only compiles its offscreen renderer with the
-`bench-support` (or `test-support`) feature, so gpui-tui enables
+Both `gpui-pre-wgpu` and `gpui-fast-wgpu` only compile their offscreen
+renderer with the `bench-support` (or `test-support`) feature, so gpui-tui enables
 `bench-support`. This also builds benchmarking crates (`criterion`,
 `hdrhistogram`) into the binary and turns on GPUI's task-timing counters.
 `test-support` is not an option: it replaces GPUI's executor with a
@@ -291,6 +340,8 @@ out of desktop builds.
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
+cargo clippy --workspace --all-targets --features gpui-fast -- -D warnings
+cargo test --workspace --features gpui-fast
 ```
 
 The end-to-end tests (`crates/gpui-tui/tests/terminal.rs`) run a real GPUI
